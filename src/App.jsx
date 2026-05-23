@@ -431,21 +431,21 @@ function AuthForms({ onLogin, existingUsers, isRegistrationLocked }) {
             
             <div className="flex gap-2">
               <div className="flex-1">
-                <label className="block text-xs font-medium text-slate-300 mb-1">Choice 1 (10 pts)</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1">Champ 1(10pts)</label>
                 <select required value={champion1} onChange={(e) => setChampion1(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none text-xs">
                   <option value="" disabled>Select...</option>
                   {ALL_48_TEAMS.map(team => <option key={team} value={team}>{team}</option>)}
                 </select>
               </div>
               <div className="flex-1">
-                <label className="block text-xs font-medium text-slate-300 mb-1">Choice 2 (7 pts)</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1">Champ 2(7pts)</label>
                 <select required value={champion2} onChange={(e) => setChampion2(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none text-xs">
                   <option value="" disabled>Select...</option>
                   {ALL_48_TEAMS.map(team => <option key={team} value={team}>{team}</option>)}
                 </select>
               </div>
               <div className="flex-1">
-                <label className="block text-xs font-medium text-slate-300 mb-1">Choice 3 (5 pts)</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1">Champ 3(5pts)</label>
                 <select required value={champion3} onChange={(e) => setChampion3(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none text-xs">
                   <option value="" disabled>Select...</option>
                   {ALL_48_TEAMS.map(team => <option key={team} value={team}>{team}</option>)}
@@ -715,7 +715,7 @@ function LeaderboardView({ leaderboardData, settings }) {
                   <div className="col-span-6 text-left min-w-0">
                     <div className="font-bold text-white truncate text-sm" title={user.name}>{user.name}</div>
                     <div className="text-[10px] text-slate-400 truncate mt-0.5">
-                      🏆 Predicted: {user.champion1 || 'N/A'} - {user.champion2 || 'N/A'} - {user.champion3 || 'N/A'}
+                      🏆 {user.champion1 || 'N/A'} - {user.champion2 || 'N/A'} - {user.champion3 || 'N/A'}
                     </div>
                   </div>
                   <div className="col-span-2 text-center flex flex-col items-center justify-center">
