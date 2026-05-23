@@ -243,10 +243,17 @@ export default function App() {
         }
       });
 
-      if (settings?.actualChampion && u.champion === settings.actualChampion) points += 10;
+      // NEW CHAMPION LOGIC (10 pts, 7 pts, or 5 pts)
+      if (settings?.actualChampion) {
+        if (u.champion1 === settings.actualChampion) points += 10;
+        else if (u.champion2 === settings.actualChampion) points += 7;
+        else if (u.champion3 === settings.actualChampion) points += 5;
+      }
+
       return { ...u, points, exact, outcome };
     }).sort((a, b) => b.points - a.points || b.exact - a.exact || b.outcome - a.outcome);
   }, [usersData, matches, predictions, settings]);
+
 
   const handleSetProfile = (profileId) => {
     localStorage.setItem('wc2026_profile_id_en', profileId);
@@ -332,7 +339,9 @@ function NavBtn({ icon, label, active, onClick }) {
 function AuthForms({ onLogin, existingUsers, isRegistrationLocked }) {
   const [mode, setMode] = useState(isRegistrationLocked ? 'login' : 'register');
   const [name, setName] = useState('');
-  const [champion, setChampion] = useState('');
+  const [champion1, setChampion1] = useState('');
+  const [champion2, setChampion2] = useState('');
+  const [champion3, setChampion3] = useState('');
   const [pin, setPin] = useState('');
   const [selectedProfileId, setSelectedProfileId] = useState('');
   const [loginPin, setLoginPin] = useState('');
@@ -342,8 +351,12 @@ function AuthForms({ onLogin, existingUsers, isRegistrationLocked }) {
   const handleRegister = async (e) => {
     e.preventDefault();
     if (isRegistrationLocked) return;
-    if (!name.trim() || !champion.trim() || pin.length !== 4) {
+    if (!name.trim() || !champion1 || !champion2 || !champion3 || pin.length !== 4) {
       setError('Please fill all fields and input a 4-digit PIN.'); return;
+    }
+    // Ensure they pick 3 DIFFERENT teams
+    if (champion1 === champion2 || champion1 === champion3 || champion2 === champion3) {
+      setError('Please select three DIFFERENT teams for your choices.'); return;
     }
     if (existingUsers.some(u => u.name.trim().toLowerCase() === name.trim().toLowerCase())) {
       setError('Name already taken. Try adding a last name or login.'); return;
@@ -354,7 +367,12 @@ function AuthForms({ onLogin, existingUsers, isRegistrationLocked }) {
 
     try {
       await setDoc(getBaseDoc('users', newProfileId), { 
-        name: name.trim(), champion: champion.trim(), pin: pin, joinedAt: new Date().toISOString() 
+        name: name.trim(), 
+        champion1: champion1, 
+        champion2: champion2, 
+        champion3: champion3, 
+        pin: pin, 
+        joinedAt: new Date().toISOString() 
       });
       onLogin(newProfileId);
     } catch (err) { 
@@ -410,17 +428,34 @@ function AuthForms({ onLogin, existingUsers, isRegistrationLocked }) {
               <label className="block text-sm font-medium text-slate-300 mb-1">Full Name</label>
               <input type="text" required maxLength={30} value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none text-left" placeholder="e.g. Hamad Khalid" />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Predict Champion (10 pts)</label>
-              <select required value={champion} onChange={(e) => setChampion(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none appearance-none text-left">
-                <option value="" disabled>Choose a team...</option>
-                {ALL_48_TEAMS.map(team => <option key={team} value={team}>{team}</option>)}
-              </select>
+            
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-slate-300 mb-1">Choice 1 (10 pts)</label>
+                <select required value={champion1} onChange={(e) => setChampion1(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none text-xs">
+                  <option value="" disabled>Select...</option>
+                  {ALL_48_TEAMS.map(team => <option key={team} value={team}>{team}</option>)}
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-slate-300 mb-1">Choice 2 (7 pts)</label>
+                <select required value={champion2} onChange={(e) => setChampion2(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none text-xs">
+                  <option value="" disabled>Select...</option>
+                  {ALL_48_TEAMS.map(team => <option key={team} value={team}>{team}</option>)}
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-slate-300 mb-1">Choice 3 (5 pts)</label>
+                <select required value={champion3} onChange={(e) => setChampion3(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none text-xs">
+                  <option value="" disabled>Select...</option>
+                  {ALL_48_TEAMS.map(team => <option key={team} value={team}>{team}</option>)}
+                </select>
+              </div>
             </div>
+
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1">Create a Security PIN (4 digits)</label>
               <input type="password" required maxLength={4} pattern="\d{4}" value={pin} onChange={(e) => setPin(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none text-center tracking-widest text-lg" placeholder="1234" />
-              <p className="text-xs text-slate-500 mt-1 text-left">* Keep this PIN safe to log back in from other devices.</p>
             </div>
             <button disabled={loading} type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-900 font-bold rounded-lg px-4 py-3 mt-4 transition">
               {loading ? 'Registering...' : 'Create Account'}
@@ -448,6 +483,7 @@ function AuthForms({ onLogin, existingUsers, isRegistrationLocked }) {
     </div>
   );
 }
+
 
 function MatchesView({ matches, predictions, profileId }) {
   const [filterType, setFilterType] = useState('upcoming');
@@ -638,7 +674,7 @@ function LeaderboardView({ leaderboardData, settings }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
         <h2 className="text-xl font-bold text-white">Live Leaderboard</h2>
         <div className="text-xs text-slate-400 bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700">
-          Points: Exact (3) • Winner (1) • Champion (10)
+          Points: Exact (3) • Winner (1) • Champ (10/7/5)
         </div>
       </div>
 
@@ -655,9 +691,9 @@ function LeaderboardView({ leaderboardData, settings }) {
       <div className="bg-slate-800 rounded-xl overflow-hidden shadow-lg border border-slate-700">
         <div className="grid grid-cols-12 gap-2 p-3 border-b border-slate-700 text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-800/50">
           <div className="col-span-2 text-center">Rank</div>
-          <div className="col-span-5 text-left">Player</div>
-          <div className="col-span-3 text-center" title="Exact Match Score / Correct Match Winner">Exact/Win</div>
-          <div className="col-span-2 text-center">Points</div>
+          <div className="col-span-6 text-left">Player</div>
+          <div className="col-span-2 text-center" title="Exact Match Score / Correct Match Winner">M.Pts</div>
+          <div className="col-span-2 text-center">Total</div>
         </div>
         
         <div className="divide-y divide-slate-700/50">
@@ -676,13 +712,15 @@ function LeaderboardView({ leaderboardData, settings }) {
               return (
                 <div key={user.profileId} className={`grid grid-cols-12 gap-2 p-3 items-center transition ${styleStr}`}>
                   <div className={`col-span-2 text-center ${rankStyle}`}>{rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`}</div>
-                  <div className="col-span-5 text-left min-w-0">
+                  <div className="col-span-6 text-left min-w-0">
                     <div className="font-bold text-white truncate text-sm" title={user.name}>{user.name}</div>
-                    <div className="text-xs text-slate-400 truncate">🏆 Predicted: {user.champion}</div>
+                    <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                      🏆 Predicted: {user.champion1 || 'N/A'} - {user.champion2 || 'N/A'} - {user.champion3 || 'N/A'}
+                    </div>
                   </div>
-                  <div className="col-span-3 text-center flex flex-col items-center justify-center">
+                  <div className="col-span-2 text-center flex flex-col items-center justify-center">
                     <span className="text-xs font-medium text-slate-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-700">
-                      <span className="text-emerald-400">{user.exact}</span> / <span className="text-blue-400">{user.outcome}</span>
+                      <span className="text-emerald-400">{user.exact}</span>/<span className="text-blue-400">{user.outcome}</span>
                     </span>
                   </div>
                   <div className="col-span-2 text-center font-black text-emerald-400 text-lg">{user.points}</div>
@@ -695,6 +733,7 @@ function LeaderboardView({ leaderboardData, settings }) {
     </div>
   );
 }
+
 
 function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData, predictions }) {
   const [inputCode, setInputCode] = useState('');
