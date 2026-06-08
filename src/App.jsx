@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Trophy, CalendarDays, BarChart3, Settings, Lock, Check, Save, UserCircle, Edit2, Clock, LogIn, UserPlus, Trash2, ShieldAlert } from 'lucide-react';
+import { Trophy, CalendarDays, BarChart3, Settings, Lock, Check, Save, UserCircle, Edit2, Clock, LogIn, UserPlus, Trash2, ShieldAlert, Eye, Download } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc, writeBatch } from 'firebase/firestore';
@@ -20,6 +20,7 @@ const db = getFirestore(app);
 const appId = 'world-cup-app-id-en'; 
 
 const ADMIN_PASSCODE = '6014'; 
+const ADMIN_USERS = ['Ebrahim Albastaki', 'Ahmed Abdulkarim'];
 
 const ALL_48_TEAMS = [
   "Algeria", "Argentina", "Australia", "Austria", "Belgium", "Bosnia and Herzegovina", "Brazil", "Cabo Verde", "Canada", "Colombia", "Congo DR", "Côte d'Ivoire", "Croatia", "Curaçao", "Czechia", "Ecuador", "Egypt", "England", "France", "Germany", "Ghana", "Haiti", "Iran", "Iraq", "Japan", "Jordan", "Korea Republic", "Mexico", "Morocco", "Netherlands", "New Zealand", "Norway", "Panama", "Paraguay", "Portugal", "Qatar", "Saudi Arabia", "Scotland", "Senegal", "South Africa", "Spain", "Sweden", "Switzerland", "Tunisia", "Türkiye", "USA", "Uruguay", "Uzbekistan"
@@ -146,6 +147,7 @@ const BASE_MATCHES = [
 const getBaseCollection = (collectionName) => collection(db, 'artifacts', appId, 'public', 'data', collectionName);
 const getBaseDoc = (collectionName, docId) => doc(db, 'artifacts', appId, 'public', 'data', collectionName, docId);
 
+// Time Lock: Automatically locks input when current time hits kickoff (Bahrain GMT+3)
 const isMatchStarted = (dateStr, timeStr) => {
   if (!dateStr || !timeStr) return false;
   try {
@@ -231,7 +233,7 @@ export default function App() {
       const userPreds = predictions.filter(p => p.profileId === u.profileId);
 
       matches.forEach(match => {
-        if (match.actualA !== undefined && match.actualA !== null && match.actualB !== undefined && match.actualB !== null) {
+        if (match.actualA !== undefined && match.actualA !== null && !isNaN(match.actualA) && match.actualB !== undefined && match.actualB !== null && !isNaN(match.actualB)) {
           const p = userPreds.find(pred => pred.matchId === match.id);
           if (p && p.scoreA !== '' && p.scoreB !== '') {
             const pA = parseInt(p.scoreA); const pB = parseInt(p.scoreB);
@@ -243,7 +245,7 @@ export default function App() {
         }
       });
 
-      // NEW CHAMPION LOGIC (10 pts, 7 pts, or 5 pts)
+      // Updated Champion Points Logic (10, 7, 5)
       if (settings?.actualChampion) {
         if (u.champion1 === settings.actualChampion) points += 10;
         else if (u.champion2 === settings.actualChampion) points += 7;
@@ -253,7 +255,6 @@ export default function App() {
       return { ...u, points, exact, outcome };
     }).sort((a, b) => b.points - a.points || b.exact - a.exact || b.outcome - a.outcome);
   }, [usersData, matches, predictions, settings]);
-
 
   const handleSetProfile = (profileId) => {
     localStorage.setItem('wc2026_profile_id_en', profileId);
@@ -288,8 +289,7 @@ export default function App() {
           <div className="flex items-center gap-2 text-emerald-400">
             <Trophy className="w-6 h-6" />
             <div className="flex flex-col text-left">
-              <h1 className="text-xl font-bold tracking-tight text-white leading-none">World Cup 2026 Predictor</h1>
-              <span className="text-[10px] text-slate-400 font-medium mt-1">By Ebrahim Albastaki</span>
+              <h1 className="text-xl font-bold tracking-tight text-white leading-none">Finance SPA world cup challenge</h1>
             </div>
           </div>
           {currentProfile && (
@@ -308,8 +308,11 @@ export default function App() {
         ) : (
           <div className="animate-in fade-in duration-300">
             {activeTab === 'matches' && <MatchesView matches={matches} predictions={predictions} profileId={currentProfile.profileId} />}
+            {activeTab === 'predictions' && <PredictionsView matches={matches} predictions={predictions} usersData={usersData} />}
             {activeTab === 'leaderboard' && <LeaderboardView leaderboardData={leaderboardData} settings={settings} />}
-            {activeTab === 'admin' && <AdminView isAdmin={isAdmin} setIsAdmin={setIsAdmin} matches={matches} settings={settings} passcode={ADMIN_PASSCODE} usersData={usersData} predictions={predictions} />}
+            {activeTab === 'admin' && ADMIN_USERS.includes(currentProfile.name) && (
+              <AdminView isAdmin={isAdmin} setIsAdmin={setIsAdmin} matches={matches} settings={settings} passcode={ADMIN_PASSCODE} usersData={usersData} predictions={predictions} />
+            )}
           </div>
         )}
       </main>
@@ -318,8 +321,11 @@ export default function App() {
         <nav className="fixed bottom-0 left-0 right-0 bg-slate-800 border-t border-slate-700 pb-safe z-20">
           <div className="max-w-4xl mx-auto flex justify-around">
             <NavBtn icon={<CalendarDays className="w-6 h-6" />} label="Matches" active={activeTab === 'matches'} onClick={() => setActiveTab('matches')} />
+            <NavBtn icon={<Eye className="w-6 h-6" />} label="Predictions" active={activeTab === 'predictions'} onClick={() => setActiveTab('predictions')} />
             <NavBtn icon={<BarChart3 className="w-6 h-6" />} label="Leaderboard" active={activeTab === 'leaderboard'} onClick={() => setActiveTab('leaderboard')} />
-            <NavBtn icon={<Settings className="w-6 h-6" />} label="Admin" active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} />
+            {ADMIN_USERS.includes(currentProfile.name) && (
+              <NavBtn icon={<Settings className="w-6 h-6" />} label="Admin" active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} />
+            )}
           </div>
         </nav>
       )}
@@ -354,10 +360,12 @@ function AuthForms({ onLogin, existingUsers, isRegistrationLocked }) {
     if (!name.trim() || !champion1 || !champion2 || !champion3 || pin.length !== 4) {
       setError('Please fill all fields and input a 4-digit PIN.'); return;
     }
-    // Ensure they pick 3 DIFFERENT teams
+    
+    // Prevent duplicate selections
     if (champion1 === champion2 || champion1 === champion3 || champion2 === champion3) {
       setError('Please select three DIFFERENT teams for your choices.'); return;
     }
+
     if (existingUsers.some(u => u.name.trim().toLowerCase() === name.trim().toLowerCase())) {
       setError('Name already taken. Try adding a last name or login.'); return;
     }
@@ -429,23 +437,23 @@ function AuthForms({ onLogin, existingUsers, isRegistrationLocked }) {
               <input type="text" required maxLength={30} value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none text-left" placeholder="e.g. Hamad Khalid" />
             </div>
             
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <div className="flex-1">
-                <label className="block text-xs font-medium text-slate-300 mb-1">Champ 1(10pts)</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1">Choice 1 (10 pts)</label>
                 <select required value={champion1} onChange={(e) => setChampion1(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none text-xs">
                   <option value="" disabled>Select...</option>
                   {ALL_48_TEAMS.map(team => <option key={team} value={team}>{team}</option>)}
                 </select>
               </div>
               <div className="flex-1">
-                <label className="block text-xs font-medium text-slate-300 mb-1">Champ 2(7pts)</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1">Choice 2 (7 pts)</label>
                 <select required value={champion2} onChange={(e) => setChampion2(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none text-xs">
                   <option value="" disabled>Select...</option>
                   {ALL_48_TEAMS.map(team => <option key={team} value={team}>{team}</option>)}
                 </select>
               </div>
               <div className="flex-1">
-                <label className="block text-xs font-medium text-slate-300 mb-1">Champ 3(5pts)</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1">Choice 3 (5 pts)</label>
                 <select required value={champion3} onChange={(e) => setChampion3(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none text-xs">
                   <option value="" disabled>Select...</option>
                   {ALL_48_TEAMS.map(team => <option key={team} value={team}>{team}</option>)}
@@ -456,6 +464,7 @@ function AuthForms({ onLogin, existingUsers, isRegistrationLocked }) {
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1">Create a Security PIN (4 digits)</label>
               <input type="password" required maxLength={4} pattern="\d{4}" value={pin} onChange={(e) => setPin(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none text-center tracking-widest text-lg" placeholder="1234" />
+              <p className="text-xs text-slate-500 mt-1 text-left">* Keep this PIN safe to log back in from other devices.</p>
             </div>
             <button disabled={loading} type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-900 font-bold rounded-lg px-4 py-3 mt-4 transition">
               {loading ? 'Registering...' : 'Create Account'}
@@ -483,7 +492,6 @@ function AuthForms({ onLogin, existingUsers, isRegistrationLocked }) {
     </div>
   );
 }
-
 
 function MatchesView({ matches, predictions, profileId }) {
   const [filterType, setFilterType] = useState('upcoming');
@@ -597,7 +605,7 @@ function MatchCard({ match, userPred, profileId }) {
     setSaving(false);
   };
 
-  const isCompleted = match.actualA !== null && match.actualA !== undefined;
+  const isCompleted = match.actualA !== null && match.actualA !== undefined && !isNaN(match.actualA);
   const isPastKickoff = isMatchStarted(match.date, match.time);
   const isLockedForUser = match.isLocked || isCompleted || isPastKickoff;
 
@@ -668,6 +676,85 @@ function MatchCard({ match, userPred, profileId }) {
   );
 }
 
+function PredictionsView({ matches, predictions, usersData }) {
+  const now = new Date();
+  
+  const ongoingMatches = matches.filter(match => {
+    if (!match.date || !match.time) return false;
+    try {
+      const matchDate = new Date(`${match.date}T${match.time}:00+03:00`);
+      if (isNaN(matchDate)) return false;
+      
+      const twoHoursLater = new Date(matchDate.getTime() + (2 * 60 * 60 * 1000));
+      return now >= matchDate && now <= twoHoursLater;
+    } catch (e) { return false; }
+  });
+
+  if (ongoingMatches.length === 0) {
+    return (
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-12 text-center text-slate-400 shadow-md">
+        <Eye className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+        <p className="text-base font-bold text-white">No ongoing matches right now</p>
+        <p className="text-xs text-slate-500 mt-1">Predictions will appear here automatically when a match kicks off and remain visible for 2 hours for transparency.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 text-left" dir="ltr">
+      <div className="mb-4">
+        <h2 className="text-xl font-bold text-white">Ongoing Match Predictions</h2>
+        <p className="text-xs text-slate-400">Transparency Stage: View all participants' predictions for matches currently being played.</p>
+      </div>
+      
+      {ongoingMatches.map(match => {
+        let displayDate = match.date;
+        try {
+          const dObj = new Date(match.date);
+          if (!isNaN(dObj)) {
+            displayDate = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(dObj);
+          }
+        } catch(e) {}
+
+        return (
+          <div key={match.id} className="bg-slate-800 rounded-xl overflow-hidden shadow-lg border border-slate-700 mb-6">
+            <div className="bg-slate-900 p-4 border-b border-slate-700 text-center">
+              <p className="text-xs text-emerald-400 font-mono mb-1">{displayDate} - {match.time}</p>
+              <h3 className="text-lg font-bold text-white">{match.teamA} vs {match.teamB}</h3>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-center">
+                <thead className="bg-slate-800/50 text-slate-400 font-bold border-b border-slate-700">
+                  <tr>
+                    <th className="p-3 text-left">Player Name</th>
+                    <th className="p-3 text-center">{match.teamA}</th>
+                    <th className="p-3 text-center">{match.teamB}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/50 text-white">
+                  {usersData.map(user => {
+                    const pred = predictions.find(p => p.profileId === user.profileId && p.matchId === match.id);
+                    const hasPred = pred && pred.scoreA !== '' && pred.scoreB !== '';
+                    
+                    return (
+                      <tr key={user.profileId} className="hover:bg-slate-700/20 transition">
+                        <td className="p-3 text-left font-medium">{user.name}</td>
+                        <td className="p-3 font-bold text-emerald-400">{hasPred ? pred.scoreA : '-'}</td>
+                        <td className="p-3 font-bold text-emerald-400">{hasPred ? pred.scoreB : '-'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function LeaderboardView({ leaderboardData, settings }) {
   return (
     <div className="space-y-4 text-left">
@@ -715,7 +802,7 @@ function LeaderboardView({ leaderboardData, settings }) {
                   <div className="col-span-6 text-left min-w-0">
                     <div className="font-bold text-white truncate text-sm" title={user.name}>{user.name}</div>
                     <div className="text-[10px] text-slate-400 truncate mt-0.5">
-                      🏆 {user.champion1 || 'N/A'} - {user.champion2 || 'N/A'} - {user.champion3 || 'N/A'}
+                      🏆 Predicted: {user.champion1 || 'N/A'} - {user.champion2 || 'N/A'} - {user.champion3 || 'N/A'}
                     </div>
                   </div>
                   <div className="col-span-2 text-center flex flex-col items-center justify-center">
@@ -734,12 +821,54 @@ function LeaderboardView({ leaderboardData, settings }) {
   );
 }
 
-
 function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData, predictions }) {
   const [inputCode, setInputCode] = useState('');
   const [actualChamp, setActualChamp] = useState(settings?.actualChampion || '');
   const [editingMatchId, setEditingMatchId] = useState(null);
   const [editForm, setEditForm] = useState({ teamA: '', teamB: '', date: '', time: '', group: '' });
+
+  const exportToExcel = () => {
+    const pastMatches = matches.filter(m => m.actualA !== null && m.actualA !== undefined && !isNaN(m.actualA));
+
+    if (pastMatches.length === 0) {
+      alert("There are no past matches (with completed results) to extract.");
+      return;
+    }
+
+    const headers = ['Match Date', 'Match Time', 'Team 1', 'VS', 'Team 2', 'Final Result'];
+    usersData.forEach(user => headers.push(user.name));
+
+    const rows = [];
+    pastMatches.forEach(match => {
+      const row = [
+        match.date,
+        match.time,
+        match.teamA,
+        'VS',
+        match.teamB,
+        `${match.actualA} - ${match.actualB}`
+      ];
+
+      usersData.forEach(user => {
+        const pred = predictions.find(p => p.matchId === match.id && p.profileId === user.profileId);
+        if (pred && pred.scoreA !== '' && pred.scoreB !== '') {
+          row.push(`${pred.scoreA} - ${pred.scoreB}`);
+        } else {
+          row.push('No Prediction');
+        }
+      });
+      rows.push(row);
+    });
+
+    const csvContent = '\uFEFF' + [headers, ...rows].map(e => e.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', 'Past_Matches_Predictions.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -754,7 +883,10 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
   };
 
   const handleSetScores = (matchId, sA, sB) => {
-    updateMatchSafely(matchId, { actualA: sA === '' ? null : parseInt(sA), actualB: sB === '' ? null : parseInt(sB), isLocked: true });
+    const cleanA = (sA === '' || sA === null || isNaN(parseInt(sA))) ? null : parseInt(sA);
+    const cleanB = (sB === '' || sB === null || isNaN(parseInt(sB))) ? null : parseInt(sB);
+    
+    updateMatchSafely(matchId, { actualA: cleanA, actualB: cleanB });
   };
 
   const handleSetChampion = async () => {
@@ -852,6 +984,17 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
         </div>
       </div>
 
+      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md flex justify-between items-center">
+        <div>
+          <h3 className="font-bold text-white text-sm">Extract Predictions (CSV)</h3>
+          <p className="text-xs text-slate-400 mt-1">Download a file containing all participants' predictions for past matches.</p>
+        </div>
+        <button onClick={exportToExcel} className="flex items-center gap-2 bg-blue-500/20 text-blue-400 border border-blue-500/30 px-4 py-2 rounded-lg font-bold text-sm hover:bg-blue-500 hover:text-white transition-colors">
+          <Download className="w-4 h-4" />
+          Download File
+        </button>
+      </div>
+
       <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md space-y-4">
         <div>
           <h3 className="font-bold text-white text-sm">Manage All 104 Matches</h3>
@@ -889,7 +1032,7 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
               
               {!editingMatchId && (
                 <div className="flex items-center justify-between border-t border-slate-800 pt-2 mt-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2" dir="ltr">
                     <input type="number" placeholder="A" value={match.actualA ?? ''} onChange={(e) => handleSetScores(match.id, e.target.value, match.actualB)} className="w-12 h-9 bg-slate-800 border border-slate-600 rounded text-center font-bold text-white text-sm" />
                     <span className="text-slate-500">-</span>
                     <input type="number" placeholder="B" value={match.actualB ?? ''} onChange={(e) => handleSetScores(match.id, match.actualA, e.target.value)} className="w-12 h-9 bg-slate-800 border border-slate-600 rounded text-center font-bold text-white text-sm" />
