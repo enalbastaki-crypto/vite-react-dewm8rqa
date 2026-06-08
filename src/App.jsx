@@ -289,13 +289,15 @@ export default function App() {
           <div className="flex items-center gap-2 text-emerald-400">
             <Trophy className="w-6 h-6" />
             <div className="flex flex-col text-left">
-              <h1 className="text-xl font-bold tracking-tight text-white leading-none">Finance SPA world cup challenge</h1>
+              {/* Title size set to text-base */}
+              <h1 className="text-base font-bold tracking-tight text-white leading-none">Finance SPA world cup challenge</h1>
             </div>
           </div>
           {currentProfile && (
             <div className="text-sm text-slate-400 flex items-center gap-2">
               <UserCircle className="w-5 h-5" />
-              <span className="font-medium text-white">{currentProfile.name}</span>
+              {/* Participant name size explicitly set to text-sm */}
+              <span className="text-sm font-medium text-white">{currentProfile.name}</span>
               <button onClick={handleLogout} className="text-xs ml-2 text-slate-500 hover:text-white underline">Logout</button>
             </div>
           )}
