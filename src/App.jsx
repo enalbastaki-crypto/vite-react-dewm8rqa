@@ -296,8 +296,8 @@ export default function App() {
           {currentProfile && (
             <div className="text-sm text-slate-400 flex items-center gap-2">
               <UserCircle className="w-5 h-5" />
-              {/* Participant name size explicitly set to text-sm */}
-              <span className="text-sm font-medium text-white">{currentProfile.name}</span>
+              {/* Participant name size explicitly set to text-xs */}
+              <span className="text-xs font-medium text-white">{currentProfile.name}</span>
               <button onClick={handleLogout} className="text-xs ml-2 text-slate-500 hover:text-white underline">Logout</button>
             </div>
           )}
