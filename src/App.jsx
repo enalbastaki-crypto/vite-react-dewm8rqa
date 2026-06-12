@@ -830,6 +830,7 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
   const [editForm, setEditForm] = useState({ teamA: '', teamB: '', date: '', time: '', group: '' });
 
   const exportToExcel = () => {
+    // 1. Get past matches only
     const pastMatches = matches.filter(m => m.actualA !== null && m.actualA !== undefined && !isNaN(m.actualA));
 
     if (pastMatches.length === 0) {
@@ -837,31 +838,85 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
       return;
     }
 
-    const headers = ['Match Date', 'Match Time', 'Team 1', 'VS', 'Team 2', 'Final Result'];
-    usersData.forEach(user => headers.push(user.name));
+    // 2. Prepare headers
+    const headers = ['Match No.', 'Match Stage', 'Match Date', 'Match Time', 'Team 1', 'Team 2', 'Score T1', 'Score T2'];
+    
+    usersData.forEach(user => {
+      headers.push(`${user.name} (T1)`);
+      headers.push(`${user.name} (T2)`);
+      headers.push(`${user.name} (Pts)`);
+    });
 
+    // 3. Prepare rows
     const rows = [];
     pastMatches.forEach(match => {
       const row = [
+        match.order,
+        match.group,
         match.date,
         match.time,
         match.teamA,
-        'VS',
         match.teamB,
-        `${match.actualA} - ${match.actualB}`
+        match.actualA,
+        match.actualB
       ];
 
       usersData.forEach(user => {
         const pred = predictions.find(p => p.matchId === match.id && p.profileId === user.profileId);
+        
         if (pred && pred.scoreA !== '' && pred.scoreB !== '') {
-          row.push(`${pred.scoreA} - ${pred.scoreB}`);
+          const pA = parseInt(pred.scoreA);
+          const pB = parseInt(pred.scoreB);
+          const aA = parseInt(match.actualA);
+          const aB = parseInt(match.actualB);
+          
+          let points = 0;
+          if (pA === aA && pB === aB) {
+            points = 3;
+          } else if ((pA > pB && aA > aB) || (pA < pB && aA < aB) || (pA === pB && aA === aB)) {
+            points = 1;
+          }
+          
+          row.push(pA, pB, points);
         } else {
-          row.push('No Prediction');
+          row.push('NA', 'NA', 0);
         }
       });
       rows.push(row);
     });
 
+    // 4. --- Add World Cup Champion Row (if set) ---
+    if (settings && settings.actualChampion) {
+      const champRow = [
+        '', // Match No. (Empty)
+        'World Cup 2026 Champion', // Match Stage
+        '', // Date
+        '', // Time
+        '', // Team 1
+        '', // Team 2
+        settings.actualChampion, // Actual Champion (under Score T1)
+        ''  // Score T2 (Empty)
+      ];
+
+      usersData.forEach(user => {
+        // Calculate champion points
+        let champPoints = 0;
+        if (user.champion1 === settings.actualChampion) champPoints = 10;
+        else if (user.champion2 === settings.actualChampion) champPoints = 7;
+        else if (user.champion3 === settings.actualChampion) champPoints = 5;
+
+        // Display user's 3 choices
+        const userChoices = `${user.champion1} / ${user.champion2} / ${user.champion3}`;
+
+        champRow.push(userChoices);  // User's predictions under (T1)
+        champRow.push('');           // Empty under (T2)
+        champRow.push(champPoints);  // Earned points under (Pts)
+      });
+
+      rows.push(champRow);
+    }
+
+    // 5. Convert and download CSV
     const csvContent = '\uFEFF' + [headers, ...rows].map(e => e.join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -871,6 +926,7 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
     link.click();
     document.body.removeChild(link);
   };
+
 
   const handleLogin = (e) => {
     e.preventDefault();
