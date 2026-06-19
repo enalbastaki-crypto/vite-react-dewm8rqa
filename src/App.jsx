@@ -233,17 +233,46 @@ export default function App() {
       const userPreds = predictions.filter(p => p.profileId === u.profileId);
 
       matches.forEach(match => {
-        if (match.actualA !== undefined && match.actualA !== null && !isNaN(match.actualA) && match.actualB !== undefined && match.actualB !== null && !isNaN(match.actualB)) {
-          const p = userPreds.find(pred => pred.matchId === match.id);
-          if (p && p.scoreA !== '' && p.scoreB !== '') {
-            const pA = parseInt(p.scoreA); const pB = parseInt(p.scoreB);
-            const aA = parseInt(match.actualA); const aB = parseInt(match.actualB);
+        const p = userPreds.find(pred => pred.matchId === match.id);
+        if (!p) return;
 
-            if (pA === aA && pB === aB) { points += 3; exact += 1; } 
-            else if ((pA > pB && aA > aB) || (pA < pB && aA < aB) || (pA === pB && aA === aB)) { points += 1; outcome += 1; }
+        const isKnockout = !match.group.toLowerCase().includes('group');
+
+        if (isKnockout) {
+          const hasActual = match.isPk ? !!match.pkWinner : (match.actualA !== null && !isNaN(match.actualA));
+          const hasPred = p.isPk ? !!p.pkWinner : (p.scoreA !== '' && p.scoreB !== '' && p.scoreA !== undefined);
+
+          if (hasActual && hasPred) {
+            const actualWinner = match.isPk ? match.pkWinner : (parseInt(match.actualA) > parseInt(match.actualB) ? 'A' : 'B');
+            const predWinner = p.isPk ? p.pkWinner : (parseInt(p.scoreA) > parseInt(p.scoreB) ? 'A' : 'B');
+
+            const isActualPk = !!match.isPk;
+            const isPredPk = !!p.isPk;
+
+            if (!isActualPk && !isPredPk) {
+              const pA = parseInt(p.scoreA); const pB = parseInt(p.scoreB);
+              const aA = parseInt(match.actualA); const aB = parseInt(match.actualB);
+              if (pA === aA && pB === aB) { points += 3; exact += 1; } 
+              else if (actualWinner === predWinner) { points += 1; outcome += 1; }
+            } else if (isActualPk && isPredPk) {
+              if (match.pkWinner === p.pkWinner) { points += 3; exact += 1; }
+            } else {
+              if (actualWinner === predWinner) { points += 1; outcome += 1; }
+            }
+          }
+        } else {
+          // Standard Group Stage System
+          if (match.actualA !== undefined && match.actualA !== null && !isNaN(match.actualA)) {
+            if (p.scoreA !== '' && p.scoreB !== '') {
+              const pA = parseInt(p.scoreA); const pB = parseInt(p.scoreB);
+              const aA = parseInt(match.actualA); const aB = parseInt(match.actualB);
+              if (pA === aA && pB === aB) { points += 3; exact += 1; } 
+              else if ((pA > pB && aA > aB) || (pA < pB && aA < aB) || (pA === pB && aA === aB)) { points += 1; outcome += 1; }
+            }
           }
         }
       });
+
 
       // Updated Champion Points Logic (10, 7, 5)
       if (settings?.actualChampion) {
@@ -753,7 +782,6 @@ function PredictionsView({ matches, predictions, usersData }) {
     try {
       const matchDate = new Date(`${match.date}T${match.time}:00+03:00`);
       if (isNaN(matchDate)) return false;
-      
       const twoHoursLater = new Date(matchDate.getTime() + (2 * 60 * 60 * 1000));
       return now >= matchDate && now <= twoHoursLater;
     } catch (e) { return false; }
@@ -763,17 +791,17 @@ function PredictionsView({ matches, predictions, usersData }) {
     return (
       <div className="bg-slate-800 border border-slate-700 rounded-2xl p-12 text-center text-slate-400 shadow-md">
         <Eye className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-        <p className="text-base font-bold text-white">No ongoing matches right now</p>
-        <p className="text-xs text-slate-500 mt-1">Predictions will appear here automatically when a match kicks off and remain visible for 2 hours for transparency.</p>
+        <p className="text-base font-bold text-white">No ongoing matches</p>
+        <p className="text-xs text-slate-500 mt-1">Predictions of all participants will appear here automatically for 2 hours once a match kicks off.</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 text-left" dir="ltr">
+    <div className="space-y-6 text-left">
       <div className="mb-4">
         <h2 className="text-xl font-bold text-white">Ongoing Match Predictions</h2>
-        <p className="text-xs text-slate-400">Transparency Stage: View all participants' predictions for matches currently being played.</p>
+        <p className="text-xs text-slate-400">Transparency stage: View everyone's predictions for currently playing matches.</p>
       </div>
       
       {ongoingMatches.map(match => {
@@ -789,7 +817,7 @@ function PredictionsView({ matches, predictions, usersData }) {
           <div key={match.id} className="bg-slate-800 rounded-xl overflow-hidden shadow-lg border border-slate-700 mb-6">
             <div className="bg-slate-900 p-4 border-b border-slate-700 text-center">
               <p className="text-xs text-emerald-400 font-mono mb-1">{displayDate} - {match.time}</p>
-              <h3 className="text-lg font-bold text-white">{match.teamA} vs {match.teamB}</h3>
+              <h3 className="text-lg font-bold text-white">{match.teamA} VS {match.teamB}</h3>
             </div>
             
             <div className="overflow-x-auto">
@@ -804,13 +832,30 @@ function PredictionsView({ matches, predictions, usersData }) {
                 <tbody className="divide-y divide-slate-700/50 text-white">
                   {usersData.map(user => {
                     const pred = predictions.find(p => p.profileId === user.profileId && p.matchId === match.id);
-                    const hasPred = pred && pred.scoreA !== '' && pred.scoreB !== '';
+                    let displayA = '-';
+                    let displayB = '-';
+                    let isPkText = false;
+
+                    if (pred) {
+                      if (pred.isPk) {
+                        isPkText = true;
+                        displayA = pred.pkWinner === 'A' ? 'Advances (PK)' : 'Loss';
+                        displayB = pred.pkWinner === 'B' ? 'Advances (PK)' : 'Loss';
+                      } else if (pred.scoreA !== '' && pred.scoreB !== '' && pred.scoreA !== undefined) {
+                        displayA = pred.scoreA;
+                        displayB = pred.scoreB;
+                      }
+                    }
                     
                     return (
                       <tr key={user.profileId} className="hover:bg-slate-700/20 transition">
                         <td className="p-3 text-left font-medium">{user.name}</td>
-                        <td className="p-3 font-bold text-emerald-400">{hasPred ? pred.scoreA : '-'}</td>
-                        <td className="p-3 font-bold text-emerald-400">{hasPred ? pred.scoreB : '-'}</td>
+                        <td className={`p-3 font-bold ${isPkText ? (pred?.pkWinner === 'A' ? 'text-emerald-400 text-xs' : 'text-slate-500 text-xs') : 'text-emerald-400'}`}>
+                          {displayA}
+                        </td>
+                        <td className={`p-3 font-bold ${isPkText ? (pred?.pkWinner === 'B' ? 'text-emerald-400 text-xs' : 'text-slate-500 text-xs') : 'text-emerald-400'}`}>
+                          {displayB}
+                        </td>
                       </tr>
                     );
                   })}
@@ -823,6 +868,7 @@ function PredictionsView({ matches, predictions, usersData }) {
     </div>
   );
 }
+
 
 function LeaderboardView({ leaderboardData, settings }) {
   return (
@@ -895,17 +941,16 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
   const [actualChamp, setActualChamp] = useState(settings?.actualChampion || '');
   const [editingMatchId, setEditingMatchId] = useState(null);
   const [editForm, setEditForm] = useState({ teamA: '', teamB: '', date: '', time: '', group: '' });
+  const [matchFilter, setMatchFilter] = useState('hide_completed');
 
   const exportToExcel = () => {
-    // 1. Get past matches only
     const pastMatches = matches.filter(m => m.actualA !== null && m.actualA !== undefined && !isNaN(m.actualA));
 
     if (pastMatches.length === 0) {
-      alert("There are no past matches (with completed results) to extract.");
+      alert("There are no past matches to extract.");
       return;
     }
 
-    // 2. Prepare headers
     const headers = ['Match No.', 'Match Stage', 'Match Date', 'Match Time', 'Team 1', 'Team 2', 'Score T1', 'Score T2'];
     
     usersData.forEach(user => {
@@ -914,7 +959,6 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
       headers.push(`${user.name} (Pts)`);
     });
 
-    // 3. Prepare rows
     const rows = [];
     pastMatches.forEach(match => {
       const row = [
@@ -931,20 +975,25 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
       usersData.forEach(user => {
         const pred = predictions.find(p => p.matchId === match.id && p.profileId === user.profileId);
         
-        if (pred && pred.scoreA !== '' && pred.scoreB !== '') {
-          const pA = parseInt(pred.scoreA);
-          const pB = parseInt(pred.scoreB);
-          const aA = parseInt(match.actualA);
-          const aB = parseInt(match.actualB);
-          
-          let points = 0;
-          if (pA === aA && pB === aB) {
-            points = 3;
-          } else if ((pA > pB && aA > aB) || (pA < pB && aA < aB) || (pA === pB && aA === aB)) {
-            points = 1;
+        if (pred) {
+          if (pred.isPk) {
+            const winnerName = pred.pkWinner === 'A' ? match.teamA : match.teamB;
+            row.push('PK', winnerName, (match.isPk && match.pkWinner === pred.pkWinner) ? 3 : ( (!match.isPk && ((parseInt(match.actualA) > parseInt(match.actualB) && pred.pkWinner === 'A') || (parseInt(match.actualB) > parseInt(match.actualA) && pred.pkWinner === 'B'))) ? 1 : 0 ));
+          } else if (pred.scoreA !== '' && pred.scoreB !== '' && pred.scoreA !== undefined) {
+            const pA = parseInt(pred.scoreA); const pB = parseInt(pred.scoreB);
+            const aA = match.isPk ? 0 : parseInt(match.actualA); const aB = match.isPk ? 0 : parseInt(match.actualB);
+            
+            let points = 0;
+            const actualWinner = match.isPk ? match.pkWinner : (aA > aB ? 'A' : 'B');
+            const predWinner = pA > pB ? 'A' : 'B';
+
+            if (!match.isPk && pA === aA && pB === aB) points = 3;
+            else if (actualWinner === predWinner) points = 1;
+
+            row.push(pA, pB, points);
+          } else {
+            row.push('NA', 'NA', 0);
           }
-          
-          row.push(pA, pB, points);
         } else {
           row.push('NA', 'NA', 0);
         }
@@ -952,38 +1001,26 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
       rows.push(row);
     });
 
-    // 4. --- Add World Cup Champion Row (if set) ---
     if (settings && settings.actualChampion) {
       const champRow = [
-        '', // Match No. (Empty)
-        'World Cup 2026 Champion', // Match Stage
-        '', // Date
-        '', // Time
-        '', // Team 1
-        '', // Team 2
-        settings.actualChampion, // Actual Champion (under Score T1)
-        ''  // Score T2 (Empty)
+        '', 'World Cup 2026 Champion', '', '', '', '', settings.actualChampion, ''
       ];
 
       usersData.forEach(user => {
-        // Calculate champion points
         let champPoints = 0;
         if (user.champion1 === settings.actualChampion) champPoints = 10;
         else if (user.champion2 === settings.actualChampion) champPoints = 7;
         else if (user.champion3 === settings.actualChampion) champPoints = 5;
 
-        // Display user's 3 choices
         const userChoices = `${user.champion1} / ${user.champion2} / ${user.champion3}`;
-
-        champRow.push(userChoices);  // User's predictions under (T1)
-        champRow.push('');           // Empty under (T2)
-        champRow.push(champPoints);  // Earned points under (Pts)
+        champRow.push(userChoices);  
+        champRow.push('');           
+        champRow.push(champPoints);  
       });
 
       rows.push(champRow);
     }
 
-    // 5. Convert and download CSV
     const csvContent = '\uFEFF' + [headers, ...rows].map(e => e.join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -994,11 +1031,10 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
     document.body.removeChild(link);
   };
 
-
   const handleLogin = (e) => {
     e.preventDefault();
     if (inputCode === passcode) setIsAdmin(true);
-    else alert("Incorrect administration password.");
+    else alert("Incorrect passcode.");
   };
 
   const updateMatchSafely = async (matchId, updates) => {
@@ -1010,7 +1046,6 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
   const handleSetScores = (matchId, sA, sB) => {
     const cleanA = (sA === '' || sA === null || isNaN(parseInt(sA))) ? null : parseInt(sA);
     const cleanB = (sB === '' || sB === null || isNaN(parseInt(sB))) ? null : parseInt(sB);
-    
     updateMatchSafely(matchId, { actualA: cleanA, actualB: cleanB });
   };
 
@@ -1028,7 +1063,7 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
   };
 
   const handleDeleteUser = async (profileId) => {
-    if (window.confirm("Are you sure you want to permanently delete this user and all their predictions?")) {
+    if (window.confirm("Are you sure you want to delete this user permanently along with their predictions?")) {
       try {
         await deleteDoc(getBaseDoc('users', profileId));
         const userPreds = predictions.filter(p => p.profileId === profileId);
@@ -1053,36 +1088,44 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
     return (
       <div className="max-w-sm mx-auto mt-10 bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700 text-center">
         <Lock className="w-12 h-12 text-slate-500 mx-auto mb-4" />
-        <h2 className="text-xl font-bold text-white mb-2">Admin Dashboard</h2>
-        <p className="text-sm text-slate-400 mb-6">Enter code to manage real scores, placeholders, and user profiles.</p>
+        <h2 className="text-xl font-bold text-white mb-2">Admin Panel</h2>
+        <p className="text-sm text-slate-400 mb-6">Enter the secret passcode to manage the app.</p>
         <form onSubmit={handleLogin}>
           <input type="password" value={inputCode} onChange={e => setInputCode(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-center text-xl tracking-widest text-white focus:ring-2 focus:ring-emerald-500 outline-none mb-4" placeholder="••••" />
-          <button type="submit" className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg px-4 py-3 transition">Authenticate</button>
+          <button type="submit" className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg px-4 py-3 transition">Enter</button>
         </form>
       </div>
     );
   }
 
+  const displayedMatches = matches.filter(match => {
+    if (matchFilter === 'hide_completed') {
+      const hasResult = match.isPk ? !!match.pkWinner : (match.actualA !== null && match.actualA !== undefined && !isNaN(match.actualA));
+      return !(match.isLocked && hasResult);
+    }
+    return true; 
+  });
+
   return (
     <div className="space-y-6 mb-20 text-left">
       <div className="flex items-center justify-between bg-slate-800 p-4 rounded-xl border border-slate-700">
-        <h2 className="text-lg font-bold text-white flex items-center gap-2"><Settings className="w-5 h-5 text-emerald-400"/> Administration Panel</h2>
-        <button onClick={() => setIsAdmin(false)} className="text-sm text-slate-400 hover:text-white bg-slate-900 px-3 py-1.5 rounded">Exit Panel</button>
+        <h2 className="text-lg font-bold text-white flex items-center gap-2"><Settings className="w-5 h-5 text-emerald-400"/> Admin Dashboard</h2>
+        <button onClick={() => setIsAdmin(false)} className="text-sm text-slate-400 hover:text-white bg-slate-900 px-3 py-1.5 rounded">Log Out</button>
       </div>
 
       <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md flex justify-between items-center">
         <div>
-          <h3 className="font-bold text-white text-sm">Global User Registration</h3>
-          <p className="text-xs text-slate-400 mt-1">Freeze or allow new player account creation.</p>
+          <h3 className="font-bold text-white text-sm">New User Registration</h3>
+          <p className="text-xs text-slate-400 mt-1">Lock or unlock new sign-ups.</p>
         </div>
         <button onClick={toggleRegistration} className={`px-4 py-2 rounded-lg font-bold text-sm transition-colors ${settings?.isRegistrationLocked ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}`}>
-          {settings?.isRegistrationLocked ? 'Locked (Open Now)' : 'Open (Lock Now)'}
+          {settings?.isRegistrationLocked ? 'Locked (Open Registration)' : 'Open (Lock Registration)'}
         </button>
       </div>
 
       <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md">
         <h3 className="font-bold text-white mb-3 text-sm">User Management</h3>
-        <div className="space-y-2 max-h-48 overflow-y-auto pl-2">
+        <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
           {usersData.map(u => (
             <div key={u.profileId} className="flex justify-between items-center bg-slate-900 p-2 rounded border border-slate-700">
               <div>
@@ -1099,10 +1142,10 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
       </div>
 
       <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md">
-        <h3 className="font-bold text-white mb-3 text-sm">Set Tournament Champion</h3>
+        <h3 className="font-bold text-white mb-3 text-sm">Set World Cup Champion (for bonus points)</h3>
         <div className="flex gap-2">
           <select value={actualChamp} onChange={(e) => setActualChamp(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white outline-none">
-            <option value="">TBD (Undecided)</option>
+            <option value="">Not decided yet</option>
             {ALL_48_TEAMS.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
           <button onClick={handleSetChampion} className="bg-emerald-500 text-slate-900 px-4 py-2 rounded-lg font-bold text-sm hover:bg-emerald-400">Save Champion</button>
@@ -1111,30 +1154,48 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
 
       <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md flex justify-between items-center">
         <div>
-          <h3 className="font-bold text-white text-sm">Extract Predictions (CSV)</h3>
-          <p className="text-xs text-slate-400 mt-1">Download a file containing all participants' predictions for past matches.</p>
+          <h3 className="font-bold text-white text-sm">Export Predictions (CSV)</h3>
+          <p className="text-xs text-slate-400 mt-1">Download past matches predictions & results.</p>
         </div>
         <button onClick={exportToExcel} className="flex items-center gap-2 bg-blue-500/20 text-blue-400 border border-blue-500/30 px-4 py-2 rounded-lg font-bold text-sm hover:bg-blue-500 hover:text-white transition-colors">
           <Download className="w-4 h-4" />
-          Download File
+          Download
         </button>
       </div>
 
       <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md space-y-4">
-        <div>
-          <h3 className="font-bold text-white text-sm">Manage All 104 Matches</h3>
-          <p className="text-xs text-slate-400 mt-1">Edit team placeholders (for knockouts) or submit official scores.</p>
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-slate-700/50 pb-3">
+          <div>
+            <h3 className="font-bold text-white text-sm">Manage All 104 Matches</h3>
+            <p className="text-xs text-slate-400 mt-1">Edit match details or input final scores.</p>
+          </div>
+          
+          <div className="bg-slate-900 p-1 rounded-lg border border-slate-700 flex gap-1 self-start sm:self-auto w-full sm:w-auto">
+            <button 
+              onClick={() => setMatchFilter('show_all')} 
+              className={`flex-1 text-center py-1.5 px-3 rounded text-[11px] font-bold transition-all duration-200 ${matchFilter === 'show_all' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
+              Show All
+            </button>
+            <button 
+              onClick={() => setMatchFilter('hide_completed')} 
+              className={`flex-1 text-center py-1.5 px-3 rounded text-[11px] font-bold transition-all duration-200 ${matchFilter === 'hide_completed' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
+              Hide Finished
+            </button>
+          </div>
         </div>
         
-        <div className="space-y-3 max-h-[600px] overflow-y-auto pl-2">
-          {matches.map(match => (
+        <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+          {displayedMatches.length === 0 ? (
+            <div className="text-center py-6 text-slate-400 text-sm">No matches to display with the current filter.</div>
+          ) : (
+            displayedMatches.map(match => (
             <div key={match.id} className="bg-slate-900 p-3 rounded-lg border border-slate-700 flex flex-col gap-3">
               <div className="flex justify-between items-start">
                 <div>
-                  <div className="text-xs text-slate-400 font-mono mb-1">{match.date} • {match.time} • {match.group} (m{match.order})</div>
-                  <div className="text-sm font-bold text-white truncate">{match.teamA} <span className="text-slate-500">vs</span> {match.teamB}</div>
+                  <div className="text-xs text-slate-400 font-mono mb-1">{match.date} • {match.time} • {match.group} (M{match.order})</div>
+                  <div className="text-sm font-bold text-white truncate">{match.teamA} <span className="text-slate-500">VS</span> {match.teamB}</div>
                 </div>
-                <button onClick={() => openEditForm(match)} className="text-slate-400 hover:text-emerald-400 p-1 bg-slate-800 rounded transition-colors">
+                <button onClick={() => openEditForm(match)} className="text-slate-400 hover:text-emerald-400 p-1 bg-slate-800 rounded transition-colors ml-2">
                   <Edit2 className="w-4 h-4" />
                 </button>
               </div>
@@ -1142,36 +1203,61 @@ function AdminView({ isAdmin, setIsAdmin, matches, settings, passcode, usersData
               {editingMatchId === match.id && (
                 <div className="bg-slate-800 p-3 rounded border border-emerald-500/30 mt-2">
                   <div className="grid grid-cols-2 gap-2 mb-2">
-                    <div><label className="text-xs text-slate-400">Team A</label><input type="text" value={editForm.teamA} onChange={e => setEditForm({...editForm, teamA: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm" /></div>
-                    <div><label className="text-xs text-slate-400">Team B</label><input type="text" value={editForm.teamB} onChange={e => setEditForm({...editForm, teamB: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm" /></div>
+                    <div><label className="text-xs text-slate-400">Team 1</label><input type="text" value={editForm.teamA} onChange={e => setEditForm({...editForm, teamA: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm" /></div>
+                    <div><label className="text-xs text-slate-400">Team 2</label><input type="text" value={editForm.teamB} onChange={e => setEditForm({...editForm, teamB: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm" /></div>
                     <div><label className="text-xs text-slate-400">Date</label><input type="date" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm" /></div>
                     <div><label className="text-xs text-slate-400">Time</label><input type="time" value={editForm.time} onChange={e => setEditForm({...editForm, time: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm" /></div>
-                    <div className="col-span-2"><label className="text-xs text-slate-400">Stage / Group Title</label><input type="text" value={editForm.group} onChange={e => setEditForm({...editForm, group: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm" /></div>
+                    <div className="col-span-2"><label className="text-xs text-slate-400">Match Stage</label><input type="text" value={editForm.group} onChange={e => setEditForm({...editForm, group: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm" /></div>
                   </div>
                   <div className="flex justify-end gap-2">
                     <button onClick={() => setEditingMatchId(null)} className="px-3 py-1.5 text-xs text-slate-400 bg-slate-900 rounded">Cancel</button>
-                    <button onClick={saveEditForm} className="px-3 py-1.5 text-xs font-bold text-slate-900 bg-emerald-500 rounded">Save Match</button>
+                    <button onClick={saveEditForm} className="px-3 py-1.5 text-xs font-bold text-slate-900 bg-emerald-500 rounded">Save Edit</button>
                   </div>
                 </div>
               )}
               
               {!editingMatchId && (
-                <div className="flex items-center justify-between border-t border-slate-800 pt-2 mt-1">
-                  <div className="flex items-center gap-2" dir="ltr">
-                    <input type="number" placeholder="A" value={match.actualA ?? ''} onChange={(e) => handleSetScores(match.id, e.target.value, match.actualB)} className="w-12 h-9 bg-slate-800 border border-slate-600 rounded text-center font-bold text-white text-sm" />
-                    <span className="text-slate-500">-</span>
-                    <input type="number" placeholder="B" value={match.actualB ?? ''} onChange={(e) => handleSetScores(match.id, match.actualA, e.target.value)} className="w-12 h-9 bg-slate-800 border border-slate-600 rounded text-center font-bold text-white text-sm" />
+                <div className="flex flex-col gap-2 border-t border-slate-800 pt-2 mt-1">
+                  
+                  {!match.group.toLowerCase().includes('group') && (
+                    <div className="flex items-center justify-between bg-slate-950/40 p-1.5 rounded border border-slate-800">
+                      <button onClick={() => updateMatchSafely(match.id, { isPk: !match.isPk, actualA: null, actualB: null, pkWinner: null })} className={`text-[10px] px-2 py-1 rounded font-bold border transition-colors ${match.isPk ? 'bg-emerald-500 text-slate-950 border-emerald-400' : 'bg-slate-900 text-slate-400 border-slate-700'}`}>
+                        {match.isPk ? '✓ Penalties active' : 'Convert to Penalties'}
+                      </button>
+
+                      {match.isPk && (
+                        <div className="flex gap-1.5">
+                          <button onClick={() => updateMatchSafely(match.id, { pkWinner: 'A' })} className={`text-[10px] px-2 py-0.5 rounded ${match.pkWinner === 'A' ? 'bg-emerald-500 text-slate-950 font-bold' : 'bg-slate-800 text-slate-400'}`}>{match.teamA} wins</button>
+                          <button onClick={() => updateMatchSafely(match.id, { pkWinner: 'B' })} className={`text-[10px] px-2 py-0.5 rounded ${match.pkWinner === 'B' ? 'bg-emerald-500 text-slate-950 font-bold' : 'bg-slate-800 text-slate-400'}`}>{match.teamB} wins</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    {match.isPk ? (
+                      <span className="text-xs font-bold text-emerald-400">Decided by Penalties</span>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <input type="number" placeholder="A" value={match.actualA ?? ''} onChange={(e) => handleSetScores(match.id, e.target.value, match.actualB)} className="w-12 h-9 bg-slate-800 border border-slate-600 rounded text-center font-bold text-white text-sm" />
+                        <span className="text-slate-500">-</span>
+                        <input type="number" placeholder="B" value={match.actualB ?? ''} onChange={(e) => handleSetScores(match.id, match.actualA, e.target.value)} className="w-12 h-9 bg-slate-800 border border-slate-600 rounded text-center font-bold text-white text-sm" />
+                      </div>
+                    )}
+
+                    <button onClick={() => handleToggleLock(match.id, match.isLocked)} className={`text-xs px-2 py-1.5 rounded w-16 font-medium transition-colors ${match.isLocked ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-slate-800 text-slate-400 border border-slate-600'}`}>
+                      {match.isLocked ? 'Locked' : 'Open'}
+                    </button>
                   </div>
 
-                  <button onClick={() => handleToggleLock(match.id, match.isLocked)} className={`text-xs px-2 py-1.5 rounded w-16 font-medium transition-colors ${match.isLocked ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-slate-800 text-slate-400 border border-slate-600'}`}>
-                    {match.isLocked ? 'Locked' : 'Open'}
-                  </button>
                 </div>
               )}
             </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
     </div>
   );
 }
+
