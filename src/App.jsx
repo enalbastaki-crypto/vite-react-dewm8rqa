@@ -782,99 +782,140 @@ function MatchCard({ match, userPred, profileId }) {
 
 
 function PredictionsView({ matches, predictions, usersData }) {
+  // State to keep track of the currently selected match from the dropdown
+  const [selectedMatchId, setSelectedMatchId] = useState('');
+  
   const now = new Date();
   
-  const ongoingMatches = matches.filter(match => {
+  // 1. Filter matches that kicked off within the last 12 hours
+  const recentMatches = matches.filter(match => {
     if (!match.date || !match.time) return false;
     try {
       const matchDate = new Date(`${match.date}T${match.time}:00+03:00`);
       if (isNaN(matchDate)) return false;
-      const twoHoursLater = new Date(matchDate.getTime() + (2 * 60 * 60 * 1000));
-      return now >= matchDate && now <= twoHoursLater;
+      
+      // Changed window from 2 hours to 12 hours
+      const twelveHoursLater = new Date(matchDate.getTime() + (12 * 60 * 60 * 1000));
+      return now >= matchDate && now <= twelveHoursLater;
     } catch (e) { return false; }
+  }).sort((a, b) => {
+    // 2. Sort from newest (most recently kicked off) to oldest
+    const dateA = new Date(`${a.date}T${a.time}:00+03:00`).getTime();
+    const dateB = new Date(`${b.date}T${b.time}:00+03:00`).getTime();
+    return dateB - dateA; 
   });
 
-  if (ongoingMatches.length === 0) {
+  // 3. Automatically select the newest match when the component loads
+  useEffect(() => {
+    if (recentMatches.length > 0) {
+      if (!selectedMatchId || !recentMatches.find(m => m.id === selectedMatchId)) {
+        setSelectedMatchId(recentMatches[0].id);
+      }
+    }
+  }, [recentMatches, selectedMatchId]);
+
+  // If there are no matches in the 12-hour window
+  if (recentMatches.length === 0) {
     return (
       <div className="bg-slate-800 border border-slate-700 rounded-2xl p-12 text-center text-slate-400 shadow-md">
         <Eye className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-        <p className="text-base font-bold text-white">No ongoing matches</p>
-        <p className="text-xs text-slate-500 mt-1">Predictions of all participants will appear here automatically for 2 hours once a match kicks off.</p>
+        <p className="text-base font-bold text-white">No matches in the last 12 hours</p>
+        <p className="text-xs text-slate-500 mt-1">Predictions of all participants will appear here for ongoing and recently finished matches to ensure transparency.</p>
       </div>
     );
   }
 
+  // The match currently being displayed in the table
+  const selectedMatch = recentMatches.find(m => m.id === selectedMatchId) || recentMatches[0];
+  
+  let displayDate = selectedMatch.date;
+  try {
+    const dObj = new Date(selectedMatch.date);
+    if (!isNaN(dObj)) {
+      displayDate = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(dObj);
+    }
+  } catch(e) {}
+
   return (
     <div className="space-y-6 text-left">
       <div className="mb-4">
-        <h2 className="text-xl font-bold text-white">Ongoing Match Predictions</h2>
-        <p className="text-xs text-slate-400">Transparency stage: View everyone's predictions for currently playing matches.</p>
+        <h2 className="text-xl font-bold text-white">Prediction Transparency</h2>
+        <p className="text-xs text-slate-400">View everyone's predictions for matches that started within the last 12 hours.</p>
+      </div>
+
+      {/* 4. Dropdown menu to select the match */}
+      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md">
+        <label className="block text-sm font-bold text-slate-400 mb-2">Select a match to view predictions:</label>
+        <select 
+          value={selectedMatchId} 
+          onChange={(e) => setSelectedMatchId(e.target.value)}
+          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-3 text-white outline-none focus:border-emerald-500 text-sm font-bold cursor-pointer"
+        >
+          {recentMatches.map(m => (
+            <option key={m.id} value={m.id}>
+              {m.teamA} VS {m.teamB}
+            </option>
+          ))}
+        </select>
       </div>
       
-      {ongoingMatches.map(match => {
-        let displayDate = match.date;
-        try {
-          const dObj = new Date(match.date);
-          if (!isNaN(dObj)) {
-            displayDate = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(dObj);
-          }
-        } catch(e) {}
-
-        return (
-          <div key={match.id} className="bg-slate-800 rounded-xl overflow-hidden shadow-lg border border-slate-700 mb-6">
-            <div className="bg-slate-900 p-4 border-b border-slate-700 text-center">
-              <p className="text-xs text-emerald-400 font-mono mb-1">{displayDate} - {match.time}</p>
-              <h3 className="text-lg font-bold text-white">{match.teamA} VS {match.teamB}</h3>
-            </div>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-center">
-                <thead className="bg-slate-800/50 text-slate-400 font-bold border-b border-slate-700">
-                  <tr>
-                    <th className="p-3 text-left">Player Name</th>
-                    <th className="p-3 text-center">{match.teamA}</th>
-                    <th className="p-3 text-center">{match.teamB}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700/50 text-white">
-                  {usersData.map(user => {
-                    const pred = predictions.find(p => p.profileId === user.profileId && p.matchId === match.id);
-                    let displayA = '-';
-                    let displayB = '-';
-                    let isPkText = false;
-
-                    if (pred) {
-                      if (pred.isPk) {
-                        isPkText = true;
-                        displayA = pred.pkWinner === 'A' ? 'Advances (PK)' : 'Loss';
-                        displayB = pred.pkWinner === 'B' ? 'Advances (PK)' : 'Loss';
-                      } else if (pred.scoreA !== '' && pred.scoreB !== '' && pred.scoreA !== undefined) {
-                        displayA = pred.scoreA;
-                        displayB = pred.scoreB;
-                      }
-                    }
-                    
-                    return (
-                      <tr key={user.profileId} className="hover:bg-slate-700/20 transition">
-                        <td className="p-3 text-left font-medium">{user.name}</td>
-                        <td className={`p-3 font-bold ${isPkText ? (pred?.pkWinner === 'A' ? 'text-emerald-400 text-xs' : 'text-slate-500 text-xs') : 'text-emerald-400'}`}>
-                          {displayA}
-                        </td>
-                        <td className={`p-3 font-bold ${isPkText ? (pred?.pkWinner === 'B' ? 'text-emerald-400 text-xs' : 'text-slate-500 text-xs') : 'text-emerald-400'}`}>
-                          {displayB}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+      {/* 5. The Prediction Table for the selected match */}
+      {selectedMatch && (
+        <div className="bg-slate-800 rounded-xl overflow-hidden shadow-lg border border-slate-700 mb-6">
+          <div className="bg-slate-900 p-4 border-b border-slate-700 text-center">
+            <p className="text-xs text-emerald-400 font-mono mb-1">{displayDate} - {selectedMatch.time} • {selectedMatch.group}</p>
+            <h3 className="text-lg font-bold text-white">{selectedMatch.teamA} VS {selectedMatch.teamB}</h3>
           </div>
-        );
-      })}
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-center">
+              <thead className="bg-slate-800/50 text-slate-400 font-bold border-b border-slate-700">
+                <tr>
+                  <th className="p-3 text-left">Player Name</th>
+                  <th className="p-3 text-center">{selectedMatch.teamA}</th>
+                  <th className="p-3 text-center">{selectedMatch.teamB}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-700/50 text-white">
+                {usersData.map(user => {
+                  const pred = predictions.find(p => p.profileId === user.profileId && p.matchId === selectedMatch.id);
+                  
+                  let displayA = '-';
+                  let displayB = '-';
+                  let isPkText = false;
+
+                  if (pred) {
+                    if (pred.isPk) {
+                      isPkText = true;
+                      displayA = pred.pkWinner === 'A' ? 'Advances (PK)' : 'Loss';
+                      displayB = pred.pkWinner === 'B' ? 'Advances (PK)' : 'Loss';
+                    } else if (pred.scoreA !== '' && pred.scoreB !== '' && pred.scoreA !== undefined) {
+                      displayA = pred.scoreA;
+                      displayB = pred.scoreB;
+                    }
+                  }
+                  
+                  return (
+                    <tr key={user.profileId} className="hover:bg-slate-700/20 transition">
+                      <td className="p-3 text-left font-medium">{user.name}</td>
+                      <td className={`p-3 font-bold ${isPkText ? (pred?.pkWinner === 'A' ? 'text-emerald-400 text-xs' : 'text-slate-500 text-xs') : 'text-emerald-400'}`}>
+                        {displayA}
+                      </td>
+                      <td className={`p-3 font-bold ${isPkText ? (pred?.pkWinner === 'B' ? 'text-emerald-400 text-xs' : 'text-slate-500 text-xs') : 'text-emerald-400'}`}>
+                        {displayB}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
 
 
 function LeaderboardView({ leaderboardData, settings }) {
