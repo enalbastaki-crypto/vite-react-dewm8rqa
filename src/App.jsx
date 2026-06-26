@@ -794,18 +794,17 @@ function PredictionsView({ matches, predictions, usersData }) {
       const matchDate = new Date(`${match.date}T${match.time}:00+03:00`);
       if (isNaN(matchDate)) return false;
       
-      // Changed window from 2 hours to 12 hours
       const twelveHoursLater = new Date(matchDate.getTime() + (12 * 60 * 60 * 1000));
       return now >= matchDate && now <= twelveHoursLater;
     } catch (e) { return false; }
   }).sort((a, b) => {
-    // 2. Sort from newest (most recently kicked off) to oldest
+    // Sort from newest to oldest
     const dateA = new Date(`${a.date}T${a.time}:00+03:00`).getTime();
     const dateB = new Date(`${b.date}T${b.time}:00+03:00`).getTime();
     return dateB - dateA; 
   });
 
-  // 3. Automatically select the newest match when the component loads
+  // Automatically select the newest match when the component loads
   useEffect(() => {
     if (recentMatches.length > 0) {
       if (!selectedMatchId || !recentMatches.find(m => m.id === selectedMatchId)) {
@@ -814,7 +813,6 @@ function PredictionsView({ matches, predictions, usersData }) {
     }
   }, [recentMatches, selectedMatchId]);
 
-  // If there are no matches in the 12-hour window
   if (recentMatches.length === 0) {
     return (
       <div className="bg-slate-800 border border-slate-700 rounded-2xl p-12 text-center text-slate-400 shadow-md">
@@ -825,8 +823,9 @@ function PredictionsView({ matches, predictions, usersData }) {
     );
   }
 
-  // The match currently being displayed in the table
+  // The match currently being displayed and check if it has a final result
   const selectedMatch = recentMatches.find(m => m.id === selectedMatchId) || recentMatches[0];
+  const isCompleted = selectedMatch.actualA !== null && selectedMatch.actualA !== undefined && !isNaN(selectedMatch.actualA);
   
   let displayDate = selectedMatch.date;
   try {
@@ -843,7 +842,7 @@ function PredictionsView({ matches, predictions, usersData }) {
         <p className="text-xs text-slate-400">View everyone's predictions for matches that started within the last 12 hours.</p>
       </div>
 
-      {/* 4. Dropdown menu to select the match */}
+      {/* Dropdown menu to select the match */}
       <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md">
         <label className="block text-sm font-bold text-slate-400 mb-2">Select a match to view predictions:</label>
         <select 
@@ -859,7 +858,7 @@ function PredictionsView({ matches, predictions, usersData }) {
         </select>
       </div>
       
-      {/* 5. The Prediction Table for the selected match */}
+      {/* The Prediction Table for the selected match */}
       {selectedMatch && (
         <div className="bg-slate-800 rounded-xl overflow-hidden shadow-lg border border-slate-700 mb-6">
           <div className="bg-slate-900 p-4 border-b border-slate-700 text-center">
@@ -874,6 +873,7 @@ function PredictionsView({ matches, predictions, usersData }) {
                   <th className="p-3 text-left">Player Name</th>
                   <th className="p-3 text-center">{selectedMatch.teamA}</th>
                   <th className="p-3 text-center">{selectedMatch.teamB}</th>
+                  <th className="p-3 text-center w-24">Pts</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50 text-white">
@@ -883,6 +883,7 @@ function PredictionsView({ matches, predictions, usersData }) {
                   let displayA = '-';
                   let displayB = '-';
                   let isPkText = false;
+                  let earnedPoints = null;
 
                   if (pred) {
                     if (pred.isPk) {
@@ -893,6 +894,28 @@ function PredictionsView({ matches, predictions, usersData }) {
                       displayA = pred.scoreA;
                       displayB = pred.scoreB;
                     }
+
+                    // Calculate points only if the admin has entered the final result
+                    if (isCompleted) {
+                      if (!selectedMatch.isPk && !pred.isPk) {
+                        const pA = parseInt(pred.scoreA); const pB = parseInt(pred.scoreB);
+                        const aA = parseInt(selectedMatch.actualA); const aB = parseInt(selectedMatch.actualB);
+                        if (pA === aA && pB === aB) earnedPoints = 3;
+                        else if ((pA > pB && aA > aB) || (pA < pB && aA < aB) || (pA === pB && aA === aB)) earnedPoints = 1;
+                        else earnedPoints = 0;
+                      } else if (selectedMatch.isPk && pred.isPk) {
+                        if (selectedMatch.pkWinner === pred.pkWinner) earnedPoints = 3;
+                        else earnedPoints = 0;
+                      } else {
+                        const actualWinner = selectedMatch.isPk ? selectedMatch.pkWinner : (parseInt(selectedMatch.actualA) > parseInt(selectedMatch.actualB) ? 'A' : 'B');
+                        const predWinner = pred.isPk ? pred.pkWinner : (parseInt(pred.scoreA) > parseInt(pred.scoreB) ? 'A' : 'B');
+                        if (actualWinner === predWinner) earnedPoints = 1;
+                        else earnedPoints = 0;
+                      }
+                    }
+                  } else {
+                    // If match is finished and user made no prediction, they get 0
+                    if (isCompleted) earnedPoints = 0;
                   }
                   
                   return (
@@ -903,6 +926,16 @@ function PredictionsView({ matches, predictions, usersData }) {
                       </td>
                       <td className={`p-3 font-bold ${isPkText ? (pred?.pkWinner === 'B' ? 'text-emerald-400 text-xs' : 'text-slate-500 text-xs') : 'text-emerald-400'}`}>
                         {displayB}
+                      </td>
+                      {/* Newly added Points column with color-coded badges */}
+                      <td className="p-3 text-center font-bold">
+                        {earnedPoints !== null ? (
+                          <span className={`text-xs font-bold px-2.5 py-1 rounded inline-block min-w-[38px] ${earnedPoints === 3 ? 'bg-emerald-500/20 text-emerald-400' : earnedPoints === 1 ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-700 text-slate-400'}`}>
+                            +{earnedPoints}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 font-medium">-</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -915,6 +948,7 @@ function PredictionsView({ matches, predictions, usersData }) {
     </div>
   );
 }
+
 
 
 
