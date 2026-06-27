@@ -861,10 +861,29 @@ function PredictionsView({ matches, predictions, usersData }) {
       {/* The Prediction Table for the selected match */}
       {selectedMatch && (
         <div className="bg-slate-800 rounded-xl overflow-hidden shadow-lg border border-slate-700 mb-6">
-          <div className="bg-slate-900 p-4 border-b border-slate-700 text-center">
-            <p className="text-xs text-emerald-400 font-mono mb-1">{displayDate} - {selectedMatch.time} • {selectedMatch.group}</p>
-            <h3 className="text-lg font-bold text-white">{selectedMatch.teamA} VS {selectedMatch.teamB}</h3>
-          </div>
+        <div className="bg-slate-900 p-4 border-b border-slate-700 text-center flex flex-col items-center">
+          <p className="text-xs text-emerald-400 font-mono mb-1">{displayDate} - {selectedMatch.time} • {selectedMatch.group}</p>
+          <h3 className="text-lg font-bold text-white">{selectedMatch.teamA} VS {selectedMatch.teamB}</h3>
+          
+          {/* Final result appears here only if the match is completed */}
+          {isCompleted && (
+            <div className="mt-2 flex items-center justify-center gap-2 text-sm">
+              <span className="text-slate-400 font-medium">Full Time:</span>
+              {selectedMatch.isPk ? (
+                <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded text-xs">
+                  Penalties (Won: {selectedMatch.pkWinner === 'A' ? selectedMatch.teamA : selectedMatch.teamB})
+                </span>
+              ) : (
+                <div className="flex items-center gap-2 text-emerald-400 font-bold bg-emerald-500/10 px-3 py-0.5 rounded">
+                  <span>{selectedMatch.actualA}</span>
+                  <span className="text-emerald-500/50">-</span>
+                  <span>{selectedMatch.actualB}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
           
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-center">
