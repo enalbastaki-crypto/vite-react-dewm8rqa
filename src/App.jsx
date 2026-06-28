@@ -525,89 +525,315 @@ function AuthForms({ onLogin, existingUsers, isRegistrationLocked }) {
 }
 
 function MatchesView({ matches, predictions, profileId }) {
-  const [filterType, setFilterType] = useState('upcoming');
+  const [filter, setFilter] = useState('active'); 
+  
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  
+  const defaultFilters = {
+    time: [],   
+    team: [],   
+    stage: [],  
+    points: []  
+  };
+  const [advFilters, setAdvFilters] = useState(defaultFilters);
+  
+  const [openDropdown, setOpenDropdown] = useState(null); 
 
-  const filteredMatches = useMemo(() => {
-    const now = new Date();
-    const localTodayStr = now.toLocaleDateString('en-CA'); 
+  // Extracts teams only from Group Stage matches to avoid "Winner of..." duplicates
+  const allTeams = [...new Set(
+    matches.filter(m => m.group.includes('Group')).flatMap(m => [m.teamA, m.teamB])
+  )].filter(team => team).sort();
+
+  const stages = ['Group Stage', 'Round of 32', 'Round of 16', 'Quarter-Finals', 'Semi-Finals', 'Third Place', 'Final'];
+
+  const getMatchPointsForFilter = (match) => {
+    const isCompleted = match.actualA !== null && match.actualA !== undefined && !isNaN(match.actualA);
+    if (!isCompleted) return null;
     
-    return matches.filter(match => {
-      if (filterType === 'today') {
-        return match.date === localTodayStr;
-      }
-      if (filterType === 'upcoming') {
-        try {
-          const matchDateTime = new Date(`${match.date}T${match.time}:00+03:00`);
-          return matchDateTime > now;
-        } catch (e) { return true; }
-      }
-      return true;
-    });
-  }, [matches, filterType]);
+    // Strict check for profileId to prevent data bleed
+    const userPred = predictions.find(p => p.matchId === match.id && p.profileId === profileId);
+    
+    if (!userPred) return 0;
 
-  const matchesByDate = filteredMatches.reduce((acc, match) => {
-    const d = match.date || "Unscheduled";
-    if (!acc[d]) acc[d] = [];
-    acc[d].push(match);
-    return acc;
+    let earnedPoints = 0;
+    if (!match.isPk && !userPred.isPk) {
+      const pA = parseInt(userPred.scoreA); const pB = parseInt(userPred.scoreB);
+      const aA = parseInt(match.actualA); const aB = parseInt(match.actualB);
+      if (pA === aA && pB === aB) earnedPoints = 3;
+      else if ((pA > pB && aA > aB) || (pA < pB && aA < aB) || (pA === pB && aA === aB)) earnedPoints = 1;
+    } else if (match.isPk && userPred.isPk) {
+      if (match.pkWinner === userPred.pkWinner) earnedPoints = 3;
+    } else {
+      const actualWinner = match.isPk ? match.pkWinner : (parseInt(match.actualA) > parseInt(match.actualB) ? 'A' : 'B');
+      const predWinner = userPred.isPk ? userPred.pkWinner : (parseInt(userPred.scoreA) > parseInt(userPred.scoreB) ? 'A' : 'B');
+      if (actualWinner === predWinner) earnedPoints = 1;
+    }
+    return earnedPoints;
+  };
+
+  // Calculate active filters before filtering the matches
+  const activeFiltersCount = advFilters.time.length + advFilters.team.length + advFilters.stage.length + advFilters.points.length;
+
+  const filteredMatches = matches.filter(match => {
+    const isCompleted = match.actualA !== null && match.actualA !== undefined && !isNaN(match.actualA);
+    const isPastKickoff = isMatchStarted(match.date, match.time);
+    const isOngoing = isPastKickoff && !isCompleted;
+    const today = new Date().toDateString();
+    const matchDateStr = new Date(match.date).toDateString();
+
+    // Ignore Quick Filters if the advanced menu is open, or if advanced filters are in use
+    if (!isFilterOpen && activeFiltersCount === 0) {
+      if (filter === 'active' && (isCompleted || isOngoing)) return false;
+      if (filter === 'today' && today !== matchDateStr) return false;
+    }
+
+    // Advanced Filters
+    if (advFilters.time.length > 0) {
+      let matchesTime = false;
+      if (advFilters.time.includes('Ongoing') && isOngoing) matchesTime = true;
+      if (advFilters.time.includes('Finished') && isCompleted) matchesTime = true;
+      if (advFilters.time.includes('Upcoming') && !isPastKickoff && !isCompleted) matchesTime = true;
+      if (!matchesTime) return false;
+    }
+    
+    if (advFilters.team.length > 0) {
+      if (!advFilters.team.includes(match.teamA) && !advFilters.team.includes(match.teamB)) return false;
+    }
+    
+    if (advFilters.stage.length > 0) {
+      let matchesStage = false;
+      advFilters.stage.forEach(s => {
+        if (s === 'Round of 32' && match.group.includes('32')) matchesStage = true;
+        else if (s === 'Round of 16' && match.group.includes('16')) matchesStage = true;
+        else if (s === 'Group Stage' && match.group.includes('Group')) matchesStage = true;
+        else if (s !== 'Round of 32' && s !== 'Round of 16' && s !== 'Group Stage' && match.group.includes(s)) matchesStage = true;
+      });
+      if (!matchesStage) return false;
+    }
+
+    if (advFilters.points.length > 0) {
+      const pts = getMatchPointsForFilter(match);
+      if (pts === null) return false; 
+      if (!advFilters.points.includes(`+${pts}`)) return false;
+    }
+
+    return true;
+  });
+
+  const groupedMatches = filteredMatches.reduce((groups, match) => {
+    const date = match.date;
+    if (!groups[date]) groups[date] = [];
+    groups[date].push(match);
+    return groups;
   }, {});
 
-  const sortedDates = Object.keys(matchesByDate).sort((a, b) => new Date(a) - new Date(b));
+  const formatDate = (dateStr) => {
+    try {
+      const dObj = new Date(dateStr);
+      if (isNaN(dObj)) return dateStr;
+      return new Intl.DateTimeFormat('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(dObj);
+    } catch(e) { return dateStr; }
+  };
+
+  const handleQuickFilter = (f) => {
+    setFilter(f);
+    setAdvFilters(defaultFilters);
+  };
+
+  const applyAdvancedFilters = () => {
+    setIsFilterOpen(false);
+    setFilter('all');
+  };
+
+  const toggleFilter = (category, value) => {
+    setAdvFilters(prev => {
+      const current = prev[category];
+      if (current.includes(value)) {
+        return { ...prev, [category]: current.filter(item => item !== value) };
+      } else {
+        return { ...prev, [category]: [...current, value] };
+      }
+    });
+  };
+
+  const renderTags = (category) => {
+    if (advFilters[category].length === 0) return null;
+    return (
+      <div className="flex flex-wrap gap-1.5 mt-2">
+        {advFilters[category].map(val => (
+          <span key={val} className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded border border-emerald-500/30">
+            {val}
+            <button onClick={(e) => { e.stopPropagation(); toggleFilter(category, val); }} className="hover:text-white bg-slate-900/50 rounded-full w-4 h-4 flex items-center justify-center transition-colors">&times;</button>
+          </span>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6 text-left">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
+      <div className="flex justify-between items-start mb-2">
         <div>
-          <h2 className="text-xl font-bold text-white">Match Predictions</h2>
-          <p className="text-xs text-slate-400">View and submit scores for all 104 matches</p>
+          <h2 className="text-xl font-bold text-white mb-1">Match Predictions</h2>
+          <p className="text-xs text-slate-400 mb-2">View all 104 tournament matches in detail</p>
+          <div className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-md text-xs font-mono font-bold">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            Bahrain Time (GMT+3)
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs flex items-center gap-1 bg-slate-800 text-emerald-400 px-3 py-1.5 rounded-full border border-slate-700">
-            <Clock className="w-3 h-3"/> Bahrain Time (GMT+3)
-          </span>
-        </div>
-      </div>
-      
-      <div className="bg-slate-800/80 p-1.5 rounded-xl border border-slate-700 flex gap-1 max-w-md mr-auto">
-        <button onClick={() => setFilterType('all')} className={`flex-1 text-center py-2 px-3 rounded-lg text-xs font-bold transition-all duration-200 ${filterType === 'all' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>Show All</button>
-        <button onClick={() => setFilterType('today')} className={`flex-1 text-center py-2 px-3 rounded-lg text-xs font-bold transition-all duration-200 ${filterType === 'today' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>Today's Matches</button>
-        <button onClick={() => setFilterType('upcoming')} className={`flex-1 text-center py-2 px-3 rounded-lg text-xs font-bold transition-all duration-200 ${filterType === 'upcoming' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>Hide Finished</button>
+        
+        <button 
+          onClick={() => setIsFilterOpen(true)}
+          className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white px-3 py-2 rounded-lg text-xs font-bold transition shadow-md mt-1"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          Advanced Filter
+          {activeFiltersCount > 0 && (
+            <span className="bg-emerald-500 text-slate-950 px-1.5 py-0.5 rounded text-[10px] font-black">
+              {activeFiltersCount}
+            </span>
+          )}
+        </button>
       </div>
 
-      {sortedDates.length === 0 ? (
-        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-12 text-center text-slate-400 shadow-md">
-          <CalendarDays className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-          <p className="text-base font-bold text-white">No matches found for this filter</p>
-          <p className="text-xs text-slate-500 mt-1">Click on "Show All" to browse the rest of the tournament.</p>
-        </div>
-      ) : (
-        sortedDates.map(date => {
-          let displayDate = date;
-          try {
-            const dObj = new Date(date);
-            if (!isNaN(dObj)) {
-              displayDate = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(dObj);
-            }
-          } catch(e) {}
+      <div className="flex bg-slate-800 p-1 rounded-xl mb-6 border border-slate-700 shadow-inner">
+        <button onClick={() => handleQuickFilter('active')} className={`flex-1 text-xs sm:text-sm font-bold py-2.5 rounded-lg transition ${filter === 'active' ? 'bg-emerald-500 text-slate-950 shadow' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>Hide Finished</button>
+        <button onClick={() => handleQuickFilter('today')} className={`flex-1 text-xs sm:text-sm font-bold py-2.5 rounded-lg transition ${filter === 'today' ? 'bg-emerald-500 text-slate-950 shadow' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>Today's Matches</button>
+        <button onClick={() => handleQuickFilter('all')} className={`flex-1 text-xs sm:text-sm font-bold py-2.5 rounded-lg transition ${filter === 'all' ? 'bg-emerald-500 text-slate-950 shadow' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>Show All</button>
+      </div>
 
-          return (
-            <div key={date} className="space-y-3">
-              <h3 className="text-sm font-bold text-slate-400 bg-slate-800/50 px-3 py-2 rounded-lg inline-block border border-slate-700/50">
-                {displayDate}
+      {isFilterOpen && (
+        <div className="fixed inset-0 bg-slate-950/85 flex items-center justify-center z-50 p-4 backdrop-blur-sm overflow-hidden">
+          <div className="bg-slate-800 border border-slate-600 rounded-2xl p-5 w-full max-w-sm shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center mb-4 border-b border-slate-700 pb-3 shrink-0">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                Advanced Customization
               </h3>
-              <div className="grid gap-4 md:grid-cols-2">
-                {matchesByDate[date].map(match => {
-                  const pred = predictions.find(p => p.matchId === match.id && p.profileId === profileId);
-                  return <MatchCard key={match.id} match={match} userPred={pred} profileId={profileId} />;
+              <button onClick={() => setIsFilterOpen(false)} className="text-slate-400 hover:text-white transition bg-slate-700/50 p-1.5 rounded-lg">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto pr-1 space-y-5 flex-1 custom-scrollbar">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 mb-2">Match Status (Multi-select)</label>
+                <div className="flex gap-2">
+                  {['Ongoing', 'Finished', 'Upcoming'].map(t => (
+                    <button key={t} onClick={() => toggleFilter('time', t)} className={`flex-1 py-2 rounded-lg text-xs font-bold transition border ${advFilters.time.includes(t) ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 mb-2">Target Teams</label>
+                <div 
+                  onClick={() => setOpenDropdown(openDropdown === 'team' ? null : 'team')}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-white text-sm font-medium cursor-pointer flex justify-between items-center transition hover:bg-slate-800"
+                >
+                  <span className={advFilters.team.length > 0 ? 'text-white' : 'text-slate-500'}>
+                    {advFilters.team.length > 0 ? `${advFilters.team.length} Teams Selected` : 'Select Teams...'}
+                  </span>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform duration-200 ${openDropdown === 'team' ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+                {renderTags('team')}
+                
+                {openDropdown === 'team' && (
+                  <div className="mt-2 bg-slate-900 border border-slate-700 rounded-lg max-h-48 overflow-y-auto p-2 grid grid-cols-2 gap-1 shadow-inner">
+                    {allTeams.map(team => (
+                      <label key={team} className="flex items-center gap-2 p-2 hover:bg-slate-800 rounded cursor-pointer transition">
+                        <input type="checkbox" checked={advFilters.team.includes(team)} onChange={() => toggleFilter('team', team)} className="accent-emerald-500 w-4 h-4 rounded" />
+                        <span className="text-sm text-slate-300">{team}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 mb-2">Tournament Stages</label>
+                <div 
+                  onClick={() => setOpenDropdown(openDropdown === 'stage' ? null : 'stage')}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-white text-sm font-medium cursor-pointer flex justify-between items-center transition hover:bg-slate-800"
+                >
+                  <span className={advFilters.stage.length > 0 ? 'text-white' : 'text-slate-500'}>
+                    {advFilters.stage.length > 0 ? `${advFilters.stage.length} Stages Selected` : 'Select Stages...'}
+                  </span>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform duration-200 ${openDropdown === 'stage' ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+                {renderTags('stage')}
+
+                {openDropdown === 'stage' && (
+                  <div className="mt-2 bg-slate-900 border border-slate-700 rounded-lg p-2 grid grid-cols-1 gap-1 shadow-inner">
+                    {stages.map(stage => (
+                      <label key={stage} className="flex items-center gap-2 p-2 hover:bg-slate-800 rounded cursor-pointer transition">
+                        <input type="checkbox" checked={advFilters.stage.includes(stage)} onChange={() => toggleFilter('stage', stage)} className="accent-emerald-500 w-4 h-4 rounded" />
+                        <span className="text-sm text-slate-300">{stage}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 mb-2">Points Earned from Prediction</label>
+                <div className="flex gap-2">
+                  {['+3', '+1', '+0'].map(p => (
+                    <button key={p} onClick={() => toggleFilter('points', p)} className={`flex-1 py-2 rounded-lg text-sm font-bold transition border ${advFilters.points.includes(p) ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 pt-4 border-t border-slate-700 flex gap-3 shrink-0">
+              <button 
+                onClick={applyAdvancedFilters} 
+                className="flex-1 bg-emerald-500 text-slate-950 font-bold py-3 rounded-lg text-sm hover:bg-emerald-400 transition shadow-lg shadow-emerald-500/20"
+              >
+                Apply Filter ({filteredMatches.length} matches)
+              </button>
+              <button 
+                onClick={() => setAdvFilters(defaultFilters)} 
+                className="px-4 bg-slate-700 text-slate-300 font-bold rounded-lg text-sm hover:bg-slate-600 transition border border-slate-600"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-6">
+        {Object.keys(groupedMatches).length > 0 ? (
+          Object.keys(groupedMatches).map(date => (
+            <div key={date}>
+              <div className="inline-block bg-slate-800 border border-slate-700 text-slate-300 text-sm font-bold px-4 py-1.5 rounded-lg mb-4">
+                {formatDate(date)}
+              </div>
+              <div className="space-y-4">
+                {groupedMatches[date].map(match => {
+                  // Strict profileId check before rendering the card
+                  const userPred = predictions.find(p => p.matchId === match.id && p.profileId === profileId);
+                  return <MatchCard key={match.id} match={match} userPred={userPred} profileId={profileId} />;
                 })}
               </div>
             </div>
-          );
-        })
-      )}
+          ))
+        ) : (
+          <div className="text-center py-12 bg-slate-800 rounded-xl border border-slate-700 shadow-inner">
+            <p className="text-slate-400 font-bold">No matches match the selected filters.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
+
+
 
 function MatchCard({ match, userPred, profileId }) {
   const [scoreA, setScoreA] = useState(userPred?.scoreA ?? '');
