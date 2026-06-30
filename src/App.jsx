@@ -547,7 +547,7 @@ function MatchesView({ matches, predictions, profileId }) {
   const stages = ['Group Stage', 'Round of 32', 'Round of 16', 'Quarter-Finals', 'Semi-Finals', 'Third Place', 'Final'];
 
   const getMatchPointsForFilter = (match) => {
-    const isCompleted = match.actualA !== null && match.actualA !== undefined && !isNaN(match.actualA);
+    const isCompleted = (match.actualA !== null && match.actualA !== undefined && match.actualA !== '') || match.isPk === true;
     if (!isCompleted) return null;
     
     // Strict check for profileId to prevent data bleed
@@ -575,7 +575,7 @@ function MatchesView({ matches, predictions, profileId }) {
   const activeFiltersCount = advFilters.time.length + advFilters.team.length + advFilters.stage.length + advFilters.points.length;
 
   const filteredMatches = matches.filter(match => {
-    const isCompleted = match.actualA !== null && match.actualA !== undefined && !isNaN(match.actualA);
+    const isCompleted = (match.actualA !== null && match.actualA !== undefined && match.actualA !== '') || match.isPk === true;
     const isPastKickoff = isMatchStarted(match.date, match.time);
     const isOngoing = isPastKickoff && !isCompleted;
     const today = new Date().toDateString();
@@ -889,7 +889,7 @@ function MatchCard({ match, userPred, profileId }) {
     setSaving(false);
   };
 
-  const isCompleted = match.actualA !== null && match.actualA !== undefined && !isNaN(match.actualA);
+  const isCompleted = (match.actualA !== null && match.actualA !== undefined && match.actualA !== '') || match.isPk === true;
   const isPastKickoff = isMatchStarted(match.date, match.time);
   const isLockedForUser = match.isLocked || isCompleted || isPastKickoff;
 
@@ -1051,7 +1051,7 @@ function PredictionsView({ matches, predictions, usersData }) {
 
   // The match currently being displayed and check if it has a final result
   const selectedMatch = recentMatches.find(m => m.id === selectedMatchId) || recentMatches[0];
-  const isCompleted = selectedMatch.actualA !== null && selectedMatch.actualA !== undefined && !isNaN(selectedMatch.actualA);
+  const isCompleted = (selectedMatch.actualA !== null && selectedMatch.actualA !== undefined && selectedMatch.actualA !== '') || selectedMatch.isPk === true;
   
   let displayDate = selectedMatch.date;
   try {
