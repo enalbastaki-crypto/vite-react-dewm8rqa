@@ -564,9 +564,29 @@ function MatchesView({ matches, predictions, profileId }) {
     } else if (match.isPk && userPred.isPk) {
       if (match.pkWinner === userPred.pkWinner) earnedPoints = 3;
     } else {
-      const actualWinner = match.isPk ? match.pkWinner : (parseInt(match.actualA) > parseInt(match.actualB) ? 'A' : 'B');
-      const predWinner = userPred.isPk ? userPred.pkWinner : (parseInt(userPred.scoreA) > parseInt(userPred.scoreB) ? 'A' : 'B');
-      if (actualWinner === predWinner) earnedPoints = 1;
+      let actualWinner = null;
+      if (match.isPk) {
+        actualWinner = match.pkWinner;
+      } else {
+        const aA = parseInt(match.actualA);
+        const aB = parseInt(match.actualB);
+        if (aA > aB) actualWinner = 'A';
+        else if (aB > aA) actualWinner = 'B';
+      }
+
+      let predWinner = null;
+      if (userPred.isPk) {
+        predWinner = userPred.pkWinner;
+      } else {
+        const pA = parseInt(userPred.scoreA);
+        const pB = parseInt(userPred.scoreB);
+        if (pA > pB) predWinner = 'A';
+        else if (pB > pA) predWinner = 'B';
+      }
+
+      if (actualWinner && predWinner && actualWinner === predWinner) {
+        earnedPoints = 1;
+      }
     }
     return earnedPoints;
   };
@@ -908,12 +928,33 @@ function MatchCard({ match, userPred, profileId }) {
       if (match.pkWinner === userPred.pkWinner) earnedPoints = 3;
       else earnedPoints = 0;
     } else {
-      // 3. One predicted PKs, the other predicted a normal score (Knockout stages cross-check)
-      const actualWinner = match.isPk ? match.pkWinner : (parseInt(match.actualA) > parseInt(match.actualB) ? 'A' : 'B');
-      const predWinner = userPred.isPk ? userPred.pkWinner : (parseInt(userPred.scoreA) > parseInt(userPred.scoreB) ? 'A' : 'B');
-      
-      if (actualWinner === predWinner) earnedPoints = 1;
-      else earnedPoints = 0;
+      // Explicitly check for wins, avoiding the default to 'B' on a legacy draw
+      let actualWinner = null;
+      if (match.isPk) {
+        actualWinner = match.pkWinner;
+      } else {
+        const aA = parseInt(match.actualA);
+        const aB = parseInt(match.actualB);
+        if (aA > aB) actualWinner = 'A';
+        else if (aB > aA) actualWinner = 'B';
+      }
+
+      let predWinner = null;
+      if (userPred.isPk) {
+        predWinner = userPred.pkWinner;
+      } else {
+        const pA = parseInt(userPred.scoreA);
+        const pB = parseInt(userPred.scoreB);
+        if (pA > pB) predWinner = 'A';
+        else if (pB > pA) predWinner = 'B';
+      }
+
+      // Only award a point if both actually have a valid winner and they match
+      if (actualWinner && predWinner && actualWinner === predWinner) {
+        earnedPoints = 1;
+      } else {
+        earnedPoints = 0;
+      }
     }
   }
 
@@ -1152,11 +1193,34 @@ function PredictionsView({ matches, predictions, usersData }) {
                         if (selectedMatch.pkWinner === pred.pkWinner) earnedPoints = 3;
                         else earnedPoints = 0;
                       } else {
-                        const actualWinner = selectedMatch.isPk ? selectedMatch.pkWinner : (parseInt(selectedMatch.actualA) > parseInt(selectedMatch.actualB) ? 'A' : 'B');
-                        const predWinner = pred.isPk ? pred.pkWinner : (parseInt(pred.scoreA) > parseInt(pred.scoreB) ? 'A' : 'B');
-                        if (actualWinner === predWinner) earnedPoints = 1;
-                        else earnedPoints = 0;
-                      }
+                        // Explicitly calculate winners to handle draw cases correctly
+                        let actualWinner = null;
+                        if (selectedMatch.isPk) {
+                          actualWinner = selectedMatch.pkWinner;
+                        } else {
+                          const aA = parseInt(selectedMatch.actualA);
+                          const aB = parseInt(selectedMatch.actualB);
+                          if (aA > aB) actualWinner = 'A';
+                          else if (aB > aA) actualWinner = 'B';
+                        }
+                      
+                        let predWinner = null;
+                        if (pred.isPk) {
+                          predWinner = pred.pkWinner;
+                        } else {
+                          const pA = parseInt(pred.scoreA);
+                          const pB = parseInt(pred.scoreB);
+                          if (pA > pB) predWinner = 'A';
+                          else if (pB > pA) predWinner = 'B';
+                        }
+                      
+                        // Only award the point if both actually have a valid winner and they match
+                        if (actualWinner && predWinner && actualWinner === predWinner) {
+                          earnedPoints = 1;
+                        } else {
+                          earnedPoints = 0;
+                        }
+                      }                      
                     }
                   } else {
                     // If match is finished and user made no prediction, they get 0
