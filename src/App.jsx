@@ -640,12 +640,27 @@ function MatchesView({ matches, predictions, profileId }) {
     return true;
   });
 
-  const groupedMatches = filteredMatches.reduce((groups, match) => {
+  // Sort matches chronologically (by date, then by time) before grouping them
+  const sortedMatches = [...filteredMatches].sort((a, b) => {
+    const dateA = new Date(a.date).getTime();
+    const dateB = new Date(b.date).getTime();
+    
+    // If matches are on the exact same day, sort them by kickoff time (earliest first)
+    if (dateA === dateB) {
+      return a.time.localeCompare(b.time);
+    }
+    // Sort days from oldest to newest
+    return dateA - dateB;
+  });
+
+  // Group the perfectly sorted matches
+  const groupedMatches = sortedMatches.reduce((groups, match) => {
     const date = match.date;
     if (!groups[date]) groups[date] = [];
     groups[date].push(match);
     return groups;
   }, {});
+
 
   const formatDate = (dateStr) => {
     try {
